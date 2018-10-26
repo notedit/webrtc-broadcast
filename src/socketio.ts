@@ -84,6 +84,7 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
     socket.on('publish', async (data:any, callback:Function) => {
 
         const sdp = SDPInfo.process(data.sdp)
+        const streamId = data.streamId
 
         const transport = endpoint.createTransport(sdp)
 
@@ -98,20 +99,21 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
 
         transport.setLocalProperties(answer)
 
-        for (let offered of sdp.getStreams().values()) {
-            const incomingStream = transport.createIncomingStream(offered)
-            incomingStreams.set(incomingStream.getId(), incomingStream)
+        const offerStream = sdp.getStream(streamId)
 
-            incomingStream.on('stopped', () => {
-                incomingStreams.delete(incomingStream.getId())
-            })
-        }
+        const incomingStream = transport.createIncomingStream(offerStream)
+
+        incomingStreams.set(incomingStream.getId(), incomingStream)
+
+        incomingStream.on('stopped', () => {
+            incomingStreams.delete(incomingStream.getId())
+        })
 
         socket.on('disconnect', async () => {
             transport.stop()
         })
 
-        callback({sdp: answer.toString()})
+        callback({streamId:streamId, sdp: answer.toString()})
     })
 
     // this is a relay  

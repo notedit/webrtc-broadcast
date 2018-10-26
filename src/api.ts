@@ -27,6 +27,12 @@ apiRouter.get('/test', async (req: Request, res: Response) => {
 })
 
 
+apiRouter.get('/', async (req: Request, res: Response) => {
+    res.sendFile('publish.html')
+})
 
+apiRouter.get('/watch/:streamId', async (req: Request, res: Response) => {
+    res.sendFile('watch.html')
+})
 
 export default apiRouter
