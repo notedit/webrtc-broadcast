@@ -1,9 +1,11 @@
 import socketio from 'socket.io'
-import SocketRedis from 'socket.io-redis'
+
+import redis, { RedisAdapter } from 'socket.io-redis'
+
 
 const MediaServer = require("medooze-media-server")
 
-const SemanticSDP	= require('semantic-sdp')
+const SemanticSDP = require('semantic-sdp')
 
 const SDPInfo		= SemanticSDP.SDPInfo
 const MediaInfo		= SemanticSDP.MediaInfo
@@ -23,10 +25,13 @@ declare module 'socket.io-redis' {
 }
 
 import config from './config'
+import incomingStreams from './streams'
+
+MediaServer.enableDebug(true)
+MediaServer.enableUltraDebug(true)
 
 const endpoint = MediaServer.createEndpoint(config.endpoint)
 
-const incomingStreams = new Map<string, any>()
 
 const socketioServer = socketio({
     pingInterval: 10000,
@@ -34,52 +39,56 @@ const socketioServer = socketio({
     transports: ['websocket'] 
 })
 
-const adapter = SocketRedis({ host: 'localhost', port: 6379 })
 
-socketioServer.adapter(adapter)
+socketioServer.adapter(redis({ host: 'localhost', port: 6379 }))
 
-adapter.customHook = (data: any, cb:Function) => {
 
-    console.log('customHook', data)
+const redisAdapter = socketioServer.of('/').adapter as RedisAdapter
+
+
+redisAdapter.customHook = (data:any, cb:Function) => {
 
     const streamId = data.streamId
+    const sdp = data.sdp
 
     if (!incomingStreams.get(streamId)) {
-        cb('')
+        cb({error: 'does not exist'})
         return
     }
 
     // now we have the stream 
-
     const incomingStream = incomingStreams.get(streamId)
-    const sdp = SDPInfo.process(data.sdp)
+    const offer = SDPInfo.process(sdp)
 
-    const transport = endpoint.createTransport(sdp)
+    const transport = endpoint.createTransport(offer)
 
-    transport.setRemoteProperties(sdp)
+    transport.setRemoteProperties(offer)
 
-    const answer = sdp.answer({
+    const answer = offer.answer({
         dtls		: transport.getLocalDTLSInfo(),
-        ice		: transport.getLocalICEInfo(),
+        ice		    : transport.getLocalICEInfo(),
         candidates	: endpoint.getLocalCandidates(),
-        capabilities	: config.capabilities
+        capabilities: config.capabilities
     })
     
     transport.setLocalProperties(answer)
 
-    const outgoingStream = transport.publish(incomingStream)
+    const outgoingStream = transport.createOutgoingStream(incomingStream.getStreamInfo())
+
+    outgoingStream.attachTo(incomingStream)
 
     answer.addStream(outgoingStream.getStreamInfo())
 
     cb({
-        streamId:streamId,
+        streamId: streamId,
+        streamId2: outgoingStream.getId(),
         sdp: answer.toString()
     })
-
-    console.dir('customHook', answer.plain())
 }
 
+
 socketioServer.on('connection', async (socket: SocketIO.Socket) => {
+
 
     socket.on('publish', async (data:any, callback:Function) => {
 
@@ -113,6 +122,15 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
             transport.stop()
         })
 
+        // const outgoingStream  = transport.createOutgoingStream({
+        //     audio: true,
+        //     video: true
+        // })
+
+        // outgoingStream.attachTo(incomingStream)
+
+        // answer.addStream(outgoingStream.getStreamInfo())
+
         callback({streamId:streamId, sdp: answer.toString()})
     })
 
@@ -123,35 +141,34 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
         const streamId = data.streamId
         const sdp = data.sdp
 
-        const offer = SDPInfo.process()
+        const offer = SDPInfo.process(sdp)
         const transport = endpoint.createTransport(offer)
         transport.setRemoteProperties(offer)
 
         const answer = offer.answer({
-            dtls		: transport.getLocalDTLSInfo(),
-            ice		: transport.getLocalICEInfo(),
+            dtls        : transport.getLocalDTLSInfo(),
+            ice		    : transport.getLocalICEInfo(),
             candidates	: endpoint.getLocalCandidates(),
-            capabilities	:  config.capabilities
+            capabilities:  config.capabilities
         })
 
         transport.setLocalProperties(answer)
-
-        const outgoingStream  = transport.createOutgoingStream({
-            audio: true,
-            video: true
-        })
-
-        //Set RTP local  properties
-        transport.setLocalProperties(answer);
 
         let incomingStream
 
         // if localstream 
         if (incomingStreams.get(streamId)) {
             incomingStream = incomingStreams.get(streamId)
+
+            const outgoingStream = transport.publish(incomingStream)
+            answer.addStream(outgoingStream.getStreamInfo())
+            callback({sdp: answer.toString()})
+
         } else {
             // we need remote stream 
             const remoteOffer = endpoint.createOffer(config.capabilities)
+
+            const adapter = socketioServer.of('/').adapter as RedisAdapter
 
             adapter.customRequest({
                 streamId: streamId,
@@ -159,21 +176,45 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
             }, (err:any, replies: any[]) => {
 
                 console.log(replies)
+                console.log('customRequest',err, replies)
+
 
                 for (let reply of replies) {
-
                     if (reply && reply.streamId === streamId) {
-                        const remoteAnswer = SDPInfo.expand(reply.sdp)
+
+                        
+                        const remoteAnswer = SDPInfo.process(reply.sdp)
+
                         const remoteTransport = endpoint.createTransport(remoteAnswer, remoteOffer, {disableSTUNKeepAlive: true})
                         remoteTransport.setLocalProperties(remoteOffer)
                         remoteTransport.setRemoteProperties(remoteAnswer)
-                        const remoteIncomingStreamInfo = remoteAnswer.getStream(streamId)
+                        const remoteIncomingStreamInfo = remoteAnswer.getStream(reply.streamId)
+
+                        console.log(streamId)
+                        console.dir(remoteAnswer.getStreams())
+
+                        console.dir(remoteIncomingStreamInfo)
+
                         incomingStream = remoteTransport.createIncomingStream(remoteIncomingStreamInfo)
                         incomingStreams.set(incomingStream.getId(), incomingStream)
+
+                        console.dir(incomingStream)
 
                         incomingStream.on('stopped', () => {
                             incomingStreams.delete(incomingStream.getId())
                         })
+
+
+
+                        if (incomingStream) {
+                            const outgoingStream = transport.publish(incomingStream)
+                            answer.addStream(outgoingStream.getStreamInfo())
+                            console.dir(answer)
+                            callback({sdp: answer.toString()})
+                        } else {
+                
+                            callback({error: 'can not find the stream'})
+                        }
 
                         // todo some clean
                         // if the viewer count is 0  we should clean 
@@ -183,16 +224,7 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
             })
         }
 
-        if (incomingStream) {
 
-            outgoingStream.attachTo(incomingStream)
-            answer.addStream(outgoingStream.getStreamInfo())
-
-            callback({sdp: answer.toString()})
-        } else {
-
-            callback({error: 'can not find the stream'})
-        }
 
     })
  

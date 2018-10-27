@@ -12,7 +12,6 @@
 
 window.localStorage.setItem('debug', '*ERROR*');
 
-
 function init() {
 
     var video_container = document.getElementById('video_container');
@@ -23,7 +22,10 @@ function init() {
 
     const streamId = href.pathname.split('/').pop();
 
+    console.log(streamId);
+
     var socket = io();
+
     socket.on('connect', async () => {
         
         console.log('socketio connect');
@@ -46,7 +48,7 @@ function init() {
         await pc.setLocalDescription(offer)
 
         socket.emit('watch', {
-            streamId: stream.id,
+            streamId: streamId,
             sdp: offer.sdp
         }, async (data) => {
             console.log('answer', data.sdp)
@@ -65,7 +67,8 @@ function init() {
 }
 
 function playVideo(stream) {
-	let element = document.createElement('video');
+
+    let element = document.createElement('video');
 	video_container.appendChild(element);
 	element.id = 'remote_video';
 	element.width = 640;
@@ -73,7 +76,8 @@ function playVideo(stream) {
     element.setAttribute('playsinline', true);
     element.setAttribute('autoplay', true);
 	element.srcObject = stream;
-	element.controls = false;
+    element.controls = true;
+    element.muted = false;
 }
 
 </script>

@@ -7,6 +7,7 @@ import RateLimit from 'express-rate-limit'
 
 import config from './config'
 
+
 const apiRouter = Router()
 
 const rateLimit = new RateLimit({
@@ -28,11 +29,12 @@ apiRouter.get('/test', async (req: Request, res: Response) => {
 
 
 apiRouter.get('/', async (req: Request, res: Response) => {
-    res.sendFile('publish.html')
+    res.sendFile('publish.html', { root: __dirname + '/../public'})
 })
 
 apiRouter.get('/watch/:streamId', async (req: Request, res: Response) => {
-    res.sendFile('watch.html')
+    res.sendFile('watch.html', { root: __dirname + '/../public'})
 })
+
 
 export default apiRouter

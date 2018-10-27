@@ -10,7 +10,6 @@ import methodOverride = require('method-override')
 import { EventEmitter } from 'events'
 
 import socketio from 'socket.io'
-import SocketRedis from 'socket.io-redis'
 
 import apiRouter from './api'
 import socketioServer from './socketio'

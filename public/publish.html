@@ -17,6 +17,7 @@ function init() {
 
     
     var video_container = document.getElementById('video_container');
+    var watch_url = document.getElementById('watch_url');
 
     var socket = io();
     socket.on('connect', async () => {
@@ -32,6 +33,12 @@ function init() {
             video: {width: {exact: 640}, height: {exact: 480}},
             audio: true
         }
+
+        // pc.onaddstream = function(event) {
+        //     console.debug("pc::onAddStream",event);
+        //     //Play it
+        //     playVideo(event.stream);
+        // }
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -52,12 +59,53 @@ function init() {
                 sdp: data.sdp
             })
             await pc.setRemoteDescription(answer)
+
+            watch_url.innerHTML = 'http://localhost:6555/watch/' + stream.id
+
+
+            watch(stream.id)
         })
     })
 
     socket.on('disconnect', () => {
         console.log('socket disconnect')
     })
+
+    async function watch(streamId) {
+
+        // const pc = new RTCPeerConnection({
+        //     bundlePolicy: "max-bundle",
+        //     rtcpMuxPolicy : "require"
+        // });
+
+        // pc.onaddstream = function(event) {
+        //     console.debug("pc::onAddStream",event);
+        //     //Play it
+        //     playVideo(event.stream);
+        // }
+
+        // const offer = await pc.createOffer({
+        //     offerToReceiveAudio:1,
+        //     offerToReceiveVideo:1
+        // })
+
+        // await pc.setLocalDescription(offer)
+
+        // socket.emit('watch', {
+        //     streamId: streamId,
+        //     sdp: offer.sdp
+        // }, async (data) => {
+        //     console.log('answer', data.sdp)
+        //     const answer = new RTCSessionDescription({
+        //         type: 'answer',
+        //         sdp: data.sdp
+        //     })
+        //     await pc.setRemoteDescription(answer)
+
+        // })
+
+    }
+    
 
 }
 
@@ -70,7 +118,8 @@ function playVideo(stream) {
     element.setAttribute('playsinline', true);
     element.setAttribute('autoplay', true);
 	element.srcObject = stream;
-	element.controls = false;
+    element.controls = false;
+    element.muted = true;
 }
 
 </script>
@@ -78,12 +127,17 @@ function playVideo(stream) {
 <body onload="init();">
     <h1> WebRTC BroadCast</h1>
 
+    
 	<br/>
 	<div id="conference">
 		Video:
 		<br />
 		<div id="video_container">
         </div>
-	</div>
+    </div>
+
+    <div id="watch_url">
+        
+    </div>
 </body>
 </html>
