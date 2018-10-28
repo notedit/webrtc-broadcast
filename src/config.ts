@@ -7,8 +7,8 @@ export default {
             extensions	: [ "urn:ietf:params:rtp-hdrext:ssrc-audio-level", "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"]
         },
         video : {
-            codecs		: ["vp8"],
-            //rtx		: true,
+            codecs		: ["h264;packetization-mode=1"],
+            rtx		: true,
             rtcpfbs		: [
                 { "id": "transport-cc"},
                 { "id": "ccm", "params": ["fir"]},
