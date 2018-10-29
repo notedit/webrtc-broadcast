@@ -38,6 +38,7 @@
     "get-port": "^4.0.0",
     "ioredis": "^4.0.2",
     "ip": "^1.1.5",
+    "janus-ts": "github:notedit/janus-ts",
     "jwt-simple": "^0.5.5",
     "medooze-media-server": "^0.46.7",
     "method": "^2.0.0",
