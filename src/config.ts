@@ -1,6 +1,7 @@
 export default {
     endpoint: '127.0.0.1',
     bandwidth: 500,
+    janusurl: 'ws://101.201.141.179:8188/',
     capabilities:  {
         audio : {
             codecs		: ["opus"],
