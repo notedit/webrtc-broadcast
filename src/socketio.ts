@@ -26,12 +26,14 @@ declare module 'socket.io-redis' {
 
 import config from './config'
 import streams from './streams'
+import { Janus } from './janus'
+
+import {Gateway,Session,Handle} from 'janus-ts'
 
 MediaServer.enableDebug(true)
 MediaServer.enableUltraDebug(true)
 
 const endpoint = MediaServer.createEndpoint(config.endpoint)
-
 
 const socketioServer = socketio({
     pingInterval: 10000,
@@ -42,9 +44,10 @@ const socketioServer = socketio({
 
 socketioServer.adapter(redis({ host: 'localhost', port: 6379 }))
 
-
 const redisAdapter = socketioServer.of('/').adapter as RedisAdapter
 
+
+const gateway = new Gateway(config.janusurl)
 
 
 const getMediaPort = async () =>
@@ -104,6 +107,17 @@ redisAdapter.customHook = (data:any, cb:Function) => {
 
 socketioServer.on('connection', async (socket: SocketIO.Socket) => {
 
+    const session = await gateway.create()
+    const handle = await session.attach('janus.plugin.streaming')
+
+    handle.on('event', async (data) => {
+        console.log('event from handle', data)
+    })
+
+    socket.on('disconnect', async () => {
+
+        await session.destroy()
+    })
 
     socket.on('publish', async (data:any, callback:Function) => {
 
@@ -121,10 +135,9 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
             capabilities	: config.capabilities
         })
 
-        const videoMedia = answer.getMedia('video')
 
-        if (videoMedia) {
-            videoMedia.setBitrate(500)
+        if (answer.getMedia('video')) {
+            answer.getMedia('video').setBitrate(500)
         }
 
         transport.setLocalProperties(answer)
@@ -136,7 +149,7 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
         streams.incomingStreams.set(incomingStream.getId(), incomingStream)
 
         // add refresher
-        const refresher = MediaServer.createRefresher(1000)
+        const refresher = MediaServer.createRefresher(2000)
 
         refresher.add(incomingStream)
 
@@ -153,9 +166,19 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
         })
 
         incomingStream.streamer = streamer
-        console.dir(videoMedia)
-        console.dir(videoMedia.getCodec('h264'))
-        incomingStream.videoCodec = videoMedia.getCodec('h264')
+
+        const videoMedia = answer.getMedia('video')
+
+        if (videoMedia) {
+            incomingStream.videoCodec = videoMedia.getCodec('h264')
+        }
+
+        const audioMedia = answer.getMedia('audio')
+
+        if (audioMedia) {
+            incomingStream.audioCodec = audioMedia.getCodec('opus')
+        }
+
 
         // const outgoingStream  = transport.createOutgoingStream({
         //     audio: true,
@@ -172,143 +195,104 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
 
         // streamId 
         const streamId = data.streamId
-        const sdp = data.sdp
 
         if (!streams.incomingStreams.get(streamId)) {
-
             callback({error: 'stream does not exist'})
             return
         }
 
         const incomingStream = streams.incomingStreams.get(streamId)
 
-        const offer = SDPInfo.process(sdp)
-        const transport = endpoint.createTransport(offer)
-        transport.setRemoteProperties(offer)
+        if (!incomingStream.janusStreamId) {
 
-        const answer = offer.answer({
-            dtls        : transport.getLocalDTLSInfo(),
-            ice		    : transport.getLocalICEInfo(),
-            candidates	: endpoint.getLocalCandidates(),
-            capabilities:  config.capabilities
-        })
+            let params:any = {}
+            const audioport = await getMediaPort()
+            const videoport = await getMediaPort()
 
-        transport.setLocalProperties(answer)
-
-
-        const video = new MediaInfo('video','video')
-
-        console.dir(incomingStream.videoCodec)
-
-        video.addCodec(incomingStream.videoCodec)
-
-
-        console.dir('============')
-        console.dir(video)
-
-
-        const videoPort = await getMediaPort()
-
-        const outgoingVideoSession = incomingStream.streamer.createSession(video, {
-	        remote : {
-                ip : '127.0.0.1',
-                port: videoPort
-	        }
-        })
-
-        outgoingVideoSession.getOutgoingStreamTrack().attachTo(incomingStream.getVideoTracks()[0])
-
-
-        const incomingVideoSession = incomingStream.streamer.createSession(video, {
-            local : {
-                ip : '127.0.0.1',
-                port: videoPort
+            if (incomingStream.audioCodec) {   
+                params = Object.assign({},{
+                    audio:true,
+                    audioport: audioport,
+                    audiopt: incomingStream.audioCodec.getType(),
+                    audiortpmap: 'opus/48000/2'  // hard code for now
+                })
             }
-        })
+            
+            if (incomingStream.videoCodec) {
+                params = Object.assign(params, {
+                    video:true,
+                    videoport: videoport,
+                    videopt: incomingStream.videoCodec.getType(),
+                    videortpmap: 'H264/9000',  // hard code for now 
+                    videobufferkf:true
+                })
+            }
 
-        const outgoingStream = transport.createOutgoingStream({
-            video: true,
-            audio: false
-        })
+            params = Object.assign(params,{
+                    request: 'create',
+                    type: 'rtp'
+                })
 
-        outgoingStream.getVideoTracks()[0].attachTo(incomingVideoSession.getIncomingStreamTrack())
+            let create = await handle.request(params)
+            const janusstream = create.plugindata.data.stream
 
-        answer.addStream(outgoingStream.getStreamInfo())
+            console.dir('after createStream', janusstream)
 
-        callback({sdp: answer.toString()})
-
-
-
-        // let incomingStream
-        // if localstream 
-        // if (incomingStreams.get(streamId)) {
-        //     incomingStream = incomingStreams.get(streamId)
-
-        //     const outgoingStream = transport.publish(incomingStream)
-        //     answer.addStream(outgoingStream.getStreamInfo())
-        //     callback({sdp: answer.toString()})
-
-        // } else {
-        //     // we need remote stream 
-        //     const remoteOffer = endpoint.createOffer(config.capabilities)
-
-        //     const adapter = socketioServer.of('/').adapter as RedisAdapter
-
-        //     adapter.customRequest({
-        //         streamId: streamId,
-        //         sdp : remoteOffer.toString()
-        //     }, (err:any, replies: any[]) => {
-
-        //         console.log(replies)
-        //         console.log('customRequest',err, replies)
+            incomingStream.janusStreamId = janusstream.id 
 
 
-        //         for (let reply of replies) {
-        //             if (reply && reply.streamId === streamId) {
-                        
-        //                 const remoteAnswer = SDPInfo.process(reply.sdp)
+            if (incomingStream.videoCodec) {
 
-        //                 const remoteTransport = endpoint.createTransport(remoteAnswer, remoteOffer, {disableSTUNKeepAlive: true})
-        //                 remoteTransport.setLocalProperties(remoteOffer)
-        //                 remoteTransport.setRemoteProperties(remoteAnswer)
-        //                 const remoteIncomingStreamInfo = remoteAnswer.getStream(reply.streamId)
+                const video = new MediaInfo('video','video')
+                video.addCodec(incomingStream.videoCodec)
 
-        //                 console.log(streamId)
-        //                 console.dir(remoteAnswer.getStreams())
+                const outgoingVideoSession = incomingStream.streamer.createSession(video, {
+                    remote : {
+                        ip : '127.0.0.1',
+                        port: videoport
+                    }
+                })
 
-        //                 console.dir(remoteIncomingStreamInfo)
+                outgoingVideoSession.getOutgoingStreamTrack().attachTo(incomingStream.getVideoTracks()[0])
+            }
 
-        //                 incomingStream = remoteTransport.createIncomingStream(remoteIncomingStreamInfo)
-        //                 incomingStreams.set(incomingStream.getId(), incomingStream)
+            if (incomingStream.audioCodec) {
+                // todo 
+            }
+            
+            let watch  = await handle.request({
+                request: 'watch',
+                id: janusstream.id,
+                offer_audio:true,
+                offer_video:true 
+            })
 
-        //                 console.dir(incomingStream)
+            console.dir(watch)
 
-        //                 incomingStream.on('stopped', () => {
-        //                     incomingStreams.delete(incomingStream.getId())
-        //                 })
+            socket.emit('offer', watch.jsep, async (data) => {
+                await handle.message({
+                    request: 'start'
+                }, data.jsep)
+            })
 
+        } else {
 
+            let watch  = await handle.request({
+                request: 'watch',
+                id: incomingStream.janusStreamId,
+                offer_audio:true,
+                offer_video:true 
+            })
 
-        //                 if (incomingStream) {
-        //                     const outgoingStream = transport.publish(incomingStream)
-        //                     answer.addStream(outgoingStream.getStreamInfo())
-        //                     console.dir(answer)
-        //                     callback({sdp: answer.toString()})
-        //                 } else {
-                
-        //                     callback({error: 'can not find the stream'})
-        //                 }
+            console.dir(watch)
 
-        //                 // todo some clean
-        //                 // if the viewer count is 0  we should clean 
-        //                 // if remoteStream closed, we should closed the stream too 
-        //             }
-        //         }
-        //     })
-        // }
-
-
-
+            socket.emit('offer', watch.jsep, async (data) => {
+                await handle.message({
+                    request: 'start'
+                }, data.jsep)
+            })
+        }
+        
     })
  
 })
