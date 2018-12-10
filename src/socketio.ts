@@ -100,10 +100,10 @@ socketioServer.on('connection', async (socket: SocketIO.Socket) => {
         transport.setRemoteProperties(sdp)
 
         const answer = sdp.answer({
-            dtls		: transport.getLocalDTLSInfo(),
+            dtls    : transport.getLocalDTLSInfo(),
             ice		: transport.getLocalICEInfo(),
-            candidates	: endpoint.getLocalCandidates(),
-            capabilities	: config.capabilities
+            candidates: endpoint.getLocalCandidates(),
+            capabilities: config.capabilities
         })
 
         transport.setLocalProperties(answer)

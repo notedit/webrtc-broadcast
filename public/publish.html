@@ -20,6 +20,10 @@ function init() {
     var watch_url = document.getElementById('watch_url');
 
     var socket = io();
+
+
+    let url = new URL(window.location);
+
     socket.on('connect', async () => {
         
         console.log('socketio connect');
@@ -60,7 +64,7 @@ function init() {
             })
             await pc.setRemoteDescription(answer)
 
-            watch_url.innerHTML = 'http://localhost:6555/watch/' + stream.id
+            watch_url.innerHTML = url.origin + "/watch/" + stream.id
 
 
             watch(stream.id)
