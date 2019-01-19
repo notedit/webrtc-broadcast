@@ -38,12 +38,6 @@ function init() {
             audio: true
         }
 
-        // pc.onaddstream = function(event) {
-        //     console.debug("pc::onAddStream",event);
-        //     //Play it
-        //     playVideo(event.stream);
-        // }
-
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
@@ -64,9 +58,8 @@ function init() {
             })
             await pc.setRemoteDescription(answer)
 
-            watch_url.innerHTML = url.origin + "/watch/" + stream.id
-
-
+            watch_url.innerHTML =  "http://localhost:4999/watch/" + stream.id
+            
             watch(stream.id)
         })
     })

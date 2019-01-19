@@ -27,10 +27,10 @@ declare module 'socket.io-redis' {
 import config from './config'
 import incomingStreams from './streams'
 
-MediaServer.enableDebug(true)
-MediaServer.enableUltraDebug(true)
+// MediaServer.enableDebug(true)
+// MediaServer.enableUltraDebug(true)
 
-const endpoint = MediaServer.createEndpoint(config.endpoint)
+
 
 
 const socketioServer = socketio({
@@ -60,6 +60,7 @@ redisAdapter.customHook = (data:any, cb:Function) => {
     const incomingStream = incomingStreams.get(streamId)
     const offer = SDPInfo.process(sdp)
 
+    const endpoint = MediaServer.createEndpoint(config.endpoint)
     const transport = endpoint.createTransport(offer)
 
     transport.setRemoteProperties(offer)
@@ -90,6 +91,9 @@ redisAdapter.customHook = (data:any, cb:Function) => {
 socketioServer.on('connection', async (socket: SocketIO.Socket) => {
 
 
+    const endpoint = MediaServer.createEndpoint(config.endpoint)
+
+    
     socket.on('publish', async (data:any, callback:Function) => {
 
         const sdp = SDPInfo.process(data.sdp)
